@@ -143,7 +143,7 @@ class CudaOnlinePipelineDynamicBatcher {
   std::list<Chunk> backlog_;
   // Protects both next_batch_ and backlog_
   std::mutex next_batch_and_backlog_m_;
-  bool run_batcher_thread_;
+  std::atomic<bool> run_batcher_thread_;
   std::unique_ptr<std::thread> batcher_thread_;
   BatchedThreadedNnet3CudaOnlinePipeline &cuda_pipeline_;
 

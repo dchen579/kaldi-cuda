@@ -24,7 +24,6 @@
 
 #include "cudadecoder/cuda-decoder.h"
 #include "cudadecoder/decodable-cumatrix.h"
-#include "cudadecoder/thread-pool.h"
 #include "cudafeat/online-cuda-feature-pipeline.h"
 #include "feat/wave-reader.h"
 #include "lat/determinize-lattice-pruned.h"

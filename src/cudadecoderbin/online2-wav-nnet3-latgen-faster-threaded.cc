@@ -19,7 +19,6 @@
 // limitations under the License.
 
 #include <sstream>
-#include "cudadecoder/thread-pool.h"
 #include "feat/wave-reader.h"
 #include "fstext/fstext-lib.h"
 #include "lat/lattice-functions.h"

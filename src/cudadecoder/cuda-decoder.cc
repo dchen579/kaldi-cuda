@@ -71,6 +71,7 @@ CudaDecoder::CudaDecoder(const CudaFst &fst, const CudaDecoderConfig &config,
       n_threads_used_(0),
       n_h2h_task_not_done_(0),
       n_init_decoding_h2h_task_not_done_(0),
+      n_partial_traceback_threads_not_done_(0),
       h2h_threads_running_(true) {
   ReadConfig(config);
   // Static asserts on constants

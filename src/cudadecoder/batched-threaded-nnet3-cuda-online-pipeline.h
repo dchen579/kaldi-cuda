@@ -30,7 +30,6 @@
 #include "cudadecoder/cuda-decoder.h"
 #include "cudadecoder/cuda-pipeline-common.h"
 #include "cudadecoder/lattice-postprocessor.h"
-#include "cudadecoder/thread-pool-light.h"
 #include "cudafeat/online-batched-feature-pipeline-cuda.h"
 #include "feat/wave-reader.h"
 #include "lat/determinize-lattice-pruned.h"

@@ -892,7 +892,8 @@ class CudaDecoder {
   std::condition_variable n_partial_traceback_threads_not_done_cv_;
 
   // Set to false in destructor to stop threads.
-  volatile bool h2h_threads_running_;
+  // Change to std::atomic<bool>?
+  std::atomic<bool> h2h_threads_running_;
 
   // Using the output from GetBestPath, we add the best tokens (as
   // selected in GetBestCost) from the final frame to the output lattice.
