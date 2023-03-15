@@ -57,13 +57,17 @@ void CudaOnlinePipelineDynamicBatcher::Push(
   std::lock_guard<std::mutex> lk(next_batch_and_backlog_m_);
 
   // Try to add the chunk is the batch right away
-  if (!TryAddChunkToNextBatchDeepCopy(corr_id, is_first_chunk, is_last_chunk,
-                                      wave_samples_subv)) {
-    // If we cannot add the chunk to the next batch, put it in the backlog.
-    Vector<BaseFloat> wave_samples(wave_samples_subv);  // Make a deep copy.
-    backlog_.push_back(
-        {corr_id, is_first_chunk, is_last_chunk, std::move(wave_samples)});
-  }
+  // can we just not do this?
+  // if (!TryAddChunkToNextBatchDeepCopy(corr_id, is_first_chunk, is_last_chunk,
+  //                                     wave_samples_subv)) {
+  //   // If we cannot add the chunk to the next batch, put it in the backlog.
+  //   Vector<BaseFloat> wave_samples(wave_samples_subv);  // Make a deep copy.
+  //   backlog_.push_back(
+  //       {corr_id, is_first_chunk, is_last_chunk, std::move(wave_samples)});
+  // }
+  Vector<BaseFloat> wave_samples(wave_samples_subv);  // Make a deep copy.
+  backlog_.push_back(
+      {corr_id, is_first_chunk, is_last_chunk, std::move(wave_samples)});
   n_chunks_not_done_.fetch_add(1, std::memory_order_release);
 }
 
