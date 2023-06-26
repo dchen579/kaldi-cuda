@@ -752,7 +752,7 @@ class CudaDecoder {
   // init_channel_id is used to initialize a channel
   int32 init_channel_id_;
   // CUDA streams used by the decoder
-  cudaStream_t compute_st_, copy_st_;
+  cudaStream_t compute_st_, copy_st_, acoustic_copy_st_, infotoken_copy_st_;
   // Parameters extracted from CudaDecoderConfig
   // Those are defined in CudaDecoderConfig
   CostType default_beam_;

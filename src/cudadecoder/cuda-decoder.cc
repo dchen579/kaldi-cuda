@@ -84,9 +84,14 @@ CudaDecoder::CudaDecoder(const CudaFst &fst, const CudaDecoderConfig &config,
   CU_SAFE_CALL(cudaStreamCreate(&compute_st_));
   // Copies D2H of tokens for storage on host are done on
   // copy_st_, in parallel with compute_st_
-  int least_priority, greatest_priority;
-  CU_SAFE_CALL(cudaDeviceGetStreamPriorityRange(&least_priority, &greatest_priority));
-  CU_SAFE_CALL(cudaStreamCreateWithPriority(&copy_st_, cudaStreamDefault, greatest_priority));
+  // int least_priority, greatest_priority;
+  // CU_SAFE_CALL(cudaDeviceGetStreamPriorityRange(&least_priority, &greatest_priority));
+  // CU_SAFE_CALL(cudaStreamCreateWithPriority(&acoustic_copy_st_, cudaStreamDefault, greatest_priority));
+  // CU_SAFE_CALL(cudaStreamCreateWithPriority(&infotoken_copy_st_, cudaStreamDefault, greatest_priority));
+  // CU_SAFE_CALL(cudaStreamCreateWithPriority(&copy_st_, cudaStreamDefault, greatest_priority));
+  CU_SAFE_CALL(cudaStreamCreate(&acoustic_copy_st_));//, cudaStreamDefault, greatest_priority));
+  CU_SAFE_CALL(cudaStreamCreate(&infotoken_copy_st_));//, cudaStreamDefault, greatest_priority));
+ CU_SAFE_CALL(cudaStreamCreate(&copy_st_));// , cudaStreamDefault, greatest_priority));
   // For all the allocating/initializing process
   // We create a special channel
   // containing the exact state a channel should have when starting a new
@@ -354,6 +359,8 @@ void CudaDecoder::InitDeviceParams() {
 CudaDecoder::~CudaDecoder() noexcept(false) {
   // Wait for D2H copies before stopping H2H tasks.
   CU_SAFE_CALL(cudaStreamSynchronize(compute_st_));
+  CU_SAFE_CALL(cudaStreamSynchronize(acoustic_copy_st_));
+  CU_SAFE_CALL(cudaStreamSynchronize(infotoken_copy_st_));
   CU_SAFE_CALL(cudaStreamSynchronize(copy_st_));
   // Stop h2h tasks.
   WaitForInitDecodingH2HCopies();
@@ -366,6 +373,8 @@ CudaDecoder::~CudaDecoder() noexcept(false) {
   KALDI_ASSERT(n_h2h_task_not_done_ == 0);
 
   CU_SAFE_CALL(cudaStreamDestroy(compute_st_));
+  CU_SAFE_CALL(cudaStreamDestroy(acoustic_copy_st_));
+  CU_SAFE_CALL(cudaStreamDestroy(infotoken_copy_st_));
   CU_SAFE_CALL(cudaStreamDestroy(copy_st_));
 
   KALDI_DECODER_CUDA_API_CHECK_ERROR(cudaFreeHost(h_channels_counters_));
@@ -425,6 +434,7 @@ void CudaDecoder::ComputeInitialChannel() {
   ConcatenateData();
   CopyLaneCountersToHostSync();
 
+  // what uses h_lanes_counters_
   const int32 main_q_end =
       h_lanes_counters_.lane(kLane0)->main_q_narcs_and_end.y;
   KALDI_ASSERT(main_q_end > 0);
@@ -705,6 +715,9 @@ void CudaDecoder::CopyMainQueueDataToHost() {
   nvtxRangePushA("CopyMainQueueDataToHost");
   CU_SAFE_CALL(cudaEventRecord(concatenated_data_ready_evt_, compute_st_));
   // The copies on copy_st will wait on compute_st_.
+  // all of the streams need to wait on this unfortunately.
+  CU_SAFE_CALL(cudaStreamWaitEvent(acoustic_copy_st_, concatenated_data_ready_evt_, 0));
+  CU_SAFE_CALL(cudaStreamWaitEvent(infotoken_copy_st_, concatenated_data_ready_evt_, 0));
   CU_SAFE_CALL(cudaStreamWaitEvent(copy_st_, concatenated_data_ready_evt_, 0));
   // We need the total size of each segment on the host.
   CU_SAFE_CALL(cudaEventSynchronize(lane_offsets_ready_evt_));
@@ -715,6 +728,8 @@ void CudaDecoder::CopyMainQueueDataToHost() {
   WaitForH2HCopies();
   WaitForPartialHypotheses();
 
+  CU_SAFE_CALL(cudaStreamSynchronize(compute_st_));
+
   std::swap(h_extra_and_acoustic_cost_concat_tmp_,
             h_extra_and_acoustic_cost_concat_);
   std::swap(h_infotoken_concat_tmp_, h_infotoken_concat_);
@@ -722,6 +737,7 @@ void CudaDecoder::CopyMainQueueDataToHost() {
   std::swap(h_extra_prev_tokens_concat_tmp_, h_extra_prev_tokens_concat_);
   // Saving the offsets computed previously
   lanes2channels_todo_.clear();
+
   for (int32 ilane = 0; ilane < (nlanes_used_ + 1); ++ilane) {
     h_emitting_main_q_end_lane_offsets_[ilane] =
         h_lanes_counters_.lane(ilane)->main_q_n_emitting_tokens_lane_offset;
@@ -754,6 +770,8 @@ void CudaDecoder::CopyMainQueueDataToHost() {
 }
 
 void CudaDecoder::LaunchD2HCopies() {
+  // I could try using cuda graphs here...
+
   // Last offset = total
   int32 nelements_acoustic_costs = h_lanes_counters_.lane(nlanes_used_)
                                        ->main_q_n_emitting_tokens_lane_offset;
@@ -762,9 +780,9 @@ void CudaDecoder::LaunchD2HCopies() {
     KALDI_DECODER_CUDA_API_CHECK_ERROR(cudaMemcpyAsync(
         h_acoustic_cost_concat_tmp_, d_acoustic_cost_concat_,
         nelements_acoustic_costs * sizeof(*d_acoustic_cost_concat_),
-        cudaMemcpyDeviceToHost, copy_st_));
+        cudaMemcpyDeviceToHost, acoustic_copy_st_));
   }
-  CU_SAFE_CALL(cudaEventRecord(d2h_copy_acoustic_evt_, copy_st_));
+  CU_SAFE_CALL(cudaEventRecord(d2h_copy_acoustic_evt_, acoustic_copy_st_));
 
   int32 nelements_infotoken =
       h_lanes_counters_.lane(nlanes_used_)->main_q_end_lane_offset;
@@ -772,9 +790,9 @@ void CudaDecoder::LaunchD2HCopies() {
     KALDI_DECODER_CUDA_API_CHECK_ERROR(
         cudaMemcpyAsync(h_infotoken_concat_tmp_, d_infotoken_concat_,
                         nelements_infotoken * sizeof(*d_infotoken_concat_),
-                        cudaMemcpyDeviceToHost, copy_st_));
+                        cudaMemcpyDeviceToHost, infotoken_copy_st_));
   }
-  CU_SAFE_CALL(cudaEventRecord(d2h_copy_infotoken_evt_, copy_st_));
+  CU_SAFE_CALL(cudaEventRecord(d2h_copy_infotoken_evt_, infotoken_copy_st_));
   int32 nelements_extra_prev_tokens =
       h_lanes_counters_.lane(nlanes_used_)
           ->main_q_n_extra_prev_tokens_lane_offset;
@@ -875,7 +893,7 @@ void CudaDecoder::AdvanceDecoding(
         lanes_assignments_copy[ilane].second;
   }
   // Make sure that InitDecoding() has completed.
-  CU_SAFE_CALL(cudaStreamSynchronize(compute_st_));
+  // CU_SAFE_CALL(cudaStreamSynchronize(compute_st_));
   LoadChannelsStateToLanes(channels);
   KALDI_ASSERT(nlanes_used_ > 0);
   CU_SAFE_CALL(cudaMemcpyAsync(d_lanes_counters_.MutableData(),
@@ -941,12 +959,12 @@ void CudaDecoder::AdvanceDecoding(
   // Concatenating the data that will be moved to host into large arrays
   ConcatenateData();
   // Copying the final lane counters for that frame
-  CopyLaneCountersToHostSync();
-  CheckOverflow();
+  CopyLaneCountersToHostAsync();
 
   // Moving the data necessary for GetRawLattice/GetBestPath back to host
   // for storage
   CopyMainQueueDataToHost();
+  CheckOverflow();
 
   for (LaneId ilane = 0; ilane < nlanes_used_; ++ilane) {
     const ChannelId ichannel = channel_to_compute_[ilane];
